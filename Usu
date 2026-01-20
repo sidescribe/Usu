@@ -1,7 +1,7 @@
 npm install
 
 {
-  "name": "pitch-practice-pwa",
+  "name": "Usu",
   "private": true,
   "version": "1.0.0",
   "type": "module",
