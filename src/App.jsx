@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, StopCircle, Volume2, Trophy, TrendingUp, Calendar, Trash2, BarChart3, Target, Sparkles, MessageSquare, Play, Pause } from 'lucide-react';
+import { Mic, StopCircle, Volume2, Trophy, TrendingUp, Calendar, Trash2, BarChart3, Target, Sparkles, MessageSquare, Play, Pause, Award } from 'lucide-react';
 
 const App = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -20,6 +20,33 @@ const App = () => {
   const audioChunksRef = useRef([]);
   const audioRefs = useRef({});
 
+  // Gamification state
+  const [userStats, setUserStats] = useState(() => {
+    const saved = localStorage.getItem('userStats');
+    return saved ? JSON.parse(saved) : {
+      points: 0,
+      streak: 0,
+      lastPracticeDate: null,
+      badges: [],
+      totalPractices: 0,
+      bestScore: 0
+    };
+  });
+  const [showAchievement, setShowAchievement] = useState(null);
+  const [contextualHelp, setContextualHelp] = useState('');
+  const [conversationStep, setConversationStep] = useState(0);
+  const [conversationHistory, setConversationHistory] = useState([]);
+
+  // Custom objections state
+  const [customObjections, setCustomObjections] = useState(() => {
+    const saved = localStorage.getItem('customObjections');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [showCustomObjectionModal, setShowCustomObjectionModal] = useState(false);
+  const [newObjectionTitle, setNewObjectionTitle] = useState('');
+  const [newObjectionText, setNewObjectionText] = useState('');
+  const [newObjectionDifficulty, setNewObjectionDifficulty] = useState('Medium');
+
   // ⭐⭐⭐ GROQ API KEY loaded from .env file ⭐⭐⭐
   // Get free key at: https://console.groq.com
   const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
@@ -29,31 +56,56 @@ const App = () => {
       id: 1,
       title: "HIPAA Compliance",
       objection: "How do I know this is HIPAA-compliant?",
-      difficulty: "Hard"
+      difficulty: "Hard",
+      followUps: [
+        "What about patient data security?",
+        "How do you handle data breaches?",
+        "Can you show me your SOC 2 certification?"
+      ]
     },
     {
       id: 2,
       title: "Patient Privacy Consent",
       objection: "Are you recording my patient without them knowing?",
-      difficulty: "Hard"
+      difficulty: "Hard",
+      followUps: [
+        "What if the patient objects to being recorded?",
+        "How long do you store the recordings?",
+        "Can patients request deletion of their data?"
+      ]
     },
     {
       id: 3,
       title: "EHR Templates Exist",
       objection: "My EHR already has templates — why do I need this?",
-      difficulty: "Medium"
+      difficulty: "Medium",
+      followUps: [
+        "How much faster is your AI compared to templates?",
+        "Can it integrate with my existing EHR system?",
+        "What if my EHR templates change?"
+      ]
     },
     {
       id: 4,
       title: "Dental Terminology Accuracy",
       objection: "How accurate is this with dental terminology and CDT codes?",
-      difficulty: "Medium"
+      difficulty: "Medium",
+      followUps: [
+        "How do you stay updated with new CDT codes?",
+        "What happens if it misidentifies a procedure?",
+        "Can it handle specialty procedures?"
+      ]
     },
     {
       id: 5,
       title: "AI Error Liability",
       objection: "What happens if the AI gets something wrong?",
-      difficulty: "Hard"
+      difficulty: "Hard",
+      followUps: [
+        "Who is responsible for AI errors in patient records?",
+        "How do you validate AI accuracy?",
+        "What's your error correction process?"
+      ]
     },
     {
       id: 6,
@@ -273,6 +325,29 @@ Provide specific coaching feedback based on what was actually said:`
     return feedback.join(' ');
   };
 
+  const generateContextualHelp = (objectionTitle, userResponse = '') => {
+    const help = {
+      "HIPAA Compliance": "Focus on security certifications, encryption, and compliance frameworks. Mention SOC 2, HIPAA compliance, and data protection measures.",
+      "Patient Privacy Consent": "Emphasize patient consent, data control, and privacy-by-design principles. Highlight that patients maintain full control.",
+      "EHR Templates Exist": "Compare speed, accuracy, and integration benefits. Show how AI goes beyond templates with contextual understanding.",
+      "Dental Terminology Accuracy": "Mention specialized training on CDT codes, dental terminology, and continuous learning from real dental conversations.",
+      "AI Error Liability": "Address error handling, human oversight, and continuous improvement. Position AI as an assistant, not replacement.",
+      "Always Listening Concern": "Explain voice activation, manual controls, and privacy safeguards. Clarify the difference between always-on and triggered recording.",
+      "Dragon/Dictation Alternative": "Highlight AI's contextual understanding, integration capabilities, and specialized dental knowledge over generic dictation.",
+      "Internet Dependency": "Discuss offline capabilities, local processing options, and robust cloud infrastructure with redundancy.",
+      "Staff Adoption Complexity": "Emphasize intuitive design, minimal training requirements, and gradual adoption strategies.",
+      "Company Longevity Risk": "Share company stability, funding status, data portability, and long-term commitment to customers.",
+      "Too Expensive": "Focus on ROI calculations, time savings, error reduction, and productivity improvements that justify the investment.",
+      "Staff Training Time": "Highlight quick onboarding, intuitive interface, and ongoing support to minimize training requirements.",
+      "Data Security General": "Emphasize encryption, access controls, regular audits, and compliance with industry security standards.",
+      "Current System Works": "Show specific limitations of current workflows and how AI addresses pain points they may not have recognized.",
+      "ROI Unclear": "Provide specific metrics, case studies, and ROI calculators showing quantifiable benefits and payback periods.",
+      "Too Busy Now": "Offer phased implementation, quick wins, and flexible deployment options that fit their timeline."
+    };
+
+    return help[objectionTitle] || "Focus on benefits, address concerns directly, and provide specific examples or data to support your points.";
+  };
+
   const calculateScore = (pitch, duration) => {
     const wordCount = pitch.trim().split(/\s+/).length;
     const wpm = Math.round((wordCount / duration) * 60);
@@ -303,6 +378,242 @@ Provide specific coaching feedback based on what was actually said:`
       wordCount,
       wpm
     };
+  };
+
+  const updateUserStats = (score) => {
+    setUserStats(prev => {
+      const today = new Date().toDateString();
+      const isNewDay = prev.lastPracticeDate !== today;
+      const newStreak = isNewDay ? prev.streak + 1 : prev.streak;
+      const pointsEarned = Math.round(score.overall / 10); // 0-10 points based on score
+
+      let newBadges = [...prev.badges];
+      let achievement = null;
+
+      // Check for achievements
+      if (score.overall >= 90 && !prev.badges.includes('High Scorer')) {
+        newBadges.push('High Scorer');
+        achievement = { title: 'High Scorer', description: 'Scored 90% or higher!' };
+      }
+      if (newStreak >= 7 && !prev.badges.includes('Week Warrior')) {
+        newBadges.push('Week Warrior');
+        achievement = { title: 'Week Warrior', description: '7-day practice streak!' };
+      }
+      if (prev.totalPractices + 1 >= 10 && !prev.badges.includes('Dedicated Learner')) {
+        newBadges.push('Dedicated Learner');
+        achievement = { title: 'Dedicated Learner', description: 'Completed 10 practice sessions!' };
+      }
+
+      const updatedStats = {
+        ...prev,
+        points: prev.points + pointsEarned,
+        streak: isNewDay ? 1 : newStreak,
+        lastPracticeDate: today,
+        badges: newBadges,
+        totalPractices: prev.totalPractices + 1,
+        bestScore: Math.max(prev.bestScore, score.overall)
+      };
+
+      localStorage.setItem('userStats', JSON.stringify(updatedStats));
+
+      if (achievement) {
+        setShowAchievement(achievement);
+        setTimeout(() => setShowAchievement(null), 3000);
+      }
+
+      return updatedStats;
+    });
+  };
+
+  // Custom objection management
+  const addCustomObjection = () => {
+    if (!newObjectionTitle.trim() || !newObjectionText.trim()) return;
+
+    const newObjection = {
+      id: Date.now() + 1000, // Offset to avoid conflicts with built-in objections
+      title: newObjectionTitle.trim(),
+      objection: newObjectionText.trim(),
+      difficulty: newObjectionDifficulty,
+      isCustom: true,
+      followUps: []
+    };
+
+    setCustomObjections(prev => [...prev, newObjection]);
+    localStorage.setItem('customObjections', JSON.stringify([...customObjections, newObjection]));
+
+    // Reset form
+    setNewObjectionTitle('');
+    setNewObjectionText('');
+    setNewObjectionDifficulty('Medium');
+    setShowCustomObjectionModal(false);
+  };
+
+  const deleteCustomObjection = (id) => {
+    setCustomObjections(prev => prev.filter(obj => obj.id !== id));
+    const updated = customObjections.filter(obj => obj.id !== id);
+    localStorage.setItem('customObjections', JSON.stringify(updated));
+  };
+
+  // Advanced transcript analysis
+  const analyzeTranscript = (pitch, duration) => {
+    const words = pitch.toLowerCase().split(/\s+/);
+    const wordCount = words.length;
+    const wpm = Math.round((wordCount / duration) * 60);
+
+    // Filler words detection
+    const fillerWords = ['um', 'uh', 'like', 'you know', 'so', 'basically', 'actually', 'literally'];
+    const fillerCount = words.filter(word => fillerWords.includes(word.replace(/[.,!?]/g, ''))).length;
+
+    // Word choice analysis
+    const strongWords = ['save', 'reduce', 'increase', 'improve', 'automate', 'efficient', 'fast', 'accurate', 'secure', 'reliable'];
+    const weakWords = ['maybe', 'perhaps', 'kinda', 'sort of', 'try', 'might', 'could', 'should'];
+    const questionWords = ['why', 'how', 'what', 'when', 'where', 'who'];
+
+    const strongWordCount = words.filter(word => strongWords.some(strong => word.includes(strong))).length;
+    const weakWordCount = words.filter(word => weakWords.some(weak => word.includes(weak))).length;
+    const questionCount = words.filter(word => questionWords.some(q => word.includes(q))).length;
+
+    // Sentence structure
+    const sentences = pitch.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const avgSentenceLength = sentences.length > 0 ? wordCount / sentences.length : 0;
+
+    return {
+      wordCount,
+      wpm,
+      fillerWords: fillerCount,
+      strongWords: strongWordCount,
+      weakWords: weakWordCount,
+      questions: questionCount,
+      sentences: sentences.length,
+      avgSentenceLength: Math.round(avgSentenceLength * 10) / 10,
+      pacing: wpm < 100 ? 'slow' : wpm > 180 ? 'fast' : 'good'
+    };
+  };
+
+  // Generate improvement recommendations
+  const generateImprovementTips = (analysis, score, objection) => {
+    const tips = [];
+
+    // Pacing tips
+    if (analysis.pacing === 'slow') {
+      tips.push("Try speaking 20-30% faster to maintain listener engagement.");
+    } else if (analysis.pacing === 'fast') {
+      tips.push("Slow down slightly for better clarity and comprehension.");
+    }
+
+    // Filler words
+    if (analysis.fillerWords > analysis.wordCount * 0.05) {
+      tips.push(`Reduce filler words (${analysis.fillerWords} detected). Pause briefly instead of using "um" or "uh".`);
+    }
+
+    // Word choice
+    if (analysis.strongWords < 3) {
+      tips.push("Incorporate more benefit-focused language like 'save time', 'increase efficiency', or 'reduce errors'.");
+    }
+
+    if (analysis.weakWords > analysis.wordCount * 0.03) {
+      tips.push("Replace tentative language with confident statements. Instead of 'might save time', say 'saves 2 hours daily'.");
+    }
+
+    // Structure
+    if (analysis.sentences < 3) {
+      tips.push("Break your response into 3-5 clear points for better organization.");
+    }
+
+    if (analysis.avgSentenceLength > 25) {
+      tips.push("Use shorter sentences for better impact and comprehension.");
+    }
+
+    // Score-based tips
+    if (score.clarity < 70) {
+      tips.push("Focus on specific, measurable benefits rather than general statements.");
+    }
+
+    if (score.confidence < 70) {
+      tips.push("Practice in front of a mirror and record yourself to build confidence.");
+    }
+
+    // Objection-specific tips
+    const objectionTips = {
+      "HIPAA Compliance": "Lead with security certifications before diving into technical details.",
+      "Too Expensive": "Always tie pricing to specific ROI metrics and payback periods.",
+      "Current System Works": "Identify specific pain points in their current workflow first.",
+      "ROI Unclear": "Prepare 2-3 specific ROI scenarios based on practice size and specialty."
+    };
+
+    if (objectionTips[objection]) {
+      tips.push(objectionTips[objection]);
+    }
+
+    return tips.length > 0 ? tips : ["Great job! Keep practicing to maintain and improve your skills."];
+  };
+
+  // Identify common weaknesses in the pitch
+  const identifyWeaknesses = (analysis, score) => {
+    const weaknesses = [];
+
+    if (score.clarity < 70) {
+      weaknesses.push({
+        type: 'clarity',
+        severity: 'high',
+        description: 'Response lacks specific benefits and measurable outcomes',
+        suggestion: 'Include concrete numbers and specific benefits'
+      });
+    }
+
+    if (score.confidence < 70) {
+      weaknesses.push({
+        type: 'confidence',
+        severity: 'high',
+        description: 'Delivery appears hesitant with too many filler words',
+        suggestion: 'Practice speaking with confidence and reduce filler words'
+      });
+    }
+
+    if (score.conciseness < 70) {
+      weaknesses.push({
+        type: 'conciseness',
+        severity: 'medium',
+        description: 'Response is too long or doesn\'t fit the time frame',
+        suggestion: 'Focus on 2-3 key points within the time limit'
+      });
+    }
+
+    if (analysis.fillerWords > analysis.wordCount * 0.08) {
+      weaknesses.push({
+        type: 'filler_words',
+        severity: 'medium',
+        description: `High filler word usage (${analysis.fillerWords} detected)`,
+        suggestion: 'Replace "um/uh" with brief pauses'
+      });
+    }
+
+    if (analysis.strongWords < 2) {
+      weaknesses.push({
+        type: 'word_choice',
+        severity: 'medium',
+        description: 'Limited use of benefit-focused language',
+        suggestion: 'Use words like "save", "reduce", "increase", "automate"'
+      });
+    }
+
+    if (analysis.pacing === 'slow') {
+      weaknesses.push({
+        type: 'pacing',
+        severity: 'low',
+        description: 'Speaking pace is too slow for engagement',
+        suggestion: 'Increase speed to 120-150 words per minute'
+      });
+    } else if (analysis.pacing === 'fast') {
+      weaknesses.push({
+        type: 'pacing',
+        severity: 'low',
+        description: 'Speaking too quickly reduces comprehension',
+        suggestion: 'Slow down slightly for better clarity'
+      });
+    }
+
+    return weaknesses;
   };
 
   const startRecording = async () => {
@@ -396,25 +707,71 @@ Provide specific coaching feedback based on what was actually said:`
     const score = calculateScore(pitchText, actualTimer);
     setLastScore(score);
 
+    // Update gamification stats
+    updateUserStats(score);
+
     setTimeout(() => {
       getAIFeedback(pitchText, selectedObjection?.objection || 'General practice', score).then(feedback => {
-        const newPitch = {
-          id: Date.now(),
-          date: new Date().toISOString(),
-          pitch: pitchText,
-          duration: actualTimer,
-          objection: selectedObjection?.title || 'General Practice',
-          score: score,
-          aiFeedback: feedback,
-          audioURL: willHaveAudio ? audioURL : null
-        };
+        // Handle multi-turn conversation
+        const currentStep = conversationStep;
+        const objectionData = dentistObjections.find(obj => obj.id === selectedObjection?.id);
 
-        setPitchHistory(prev => {
-          const updated = [newPitch, ...prev].slice(0, 20);
-          return updated;
-        });
-        setShowResults(true);
-        console.log('✅ Recording session complete');
+        if (currentStep < (objectionData?.followUps?.length || 0)) {
+          // Continue conversation with follow-up
+          setConversationStep(currentStep + 1);
+          setConversationHistory(prev => [...prev, {
+            step: currentStep,
+            objection: currentStep === 0 ? selectedObjection.objection : objectionData.followUps[currentStep - 1],
+            response: pitchText,
+            feedback: feedback
+          }]);
+
+          // Generate contextual help for next step
+          if (objectionData?.followUps?.[currentStep]) {
+            setContextualHelp(generateContextualHelp(selectedObjection.title));
+          }
+
+          setTimeout(() => {
+            alert(`Great response! Now handle this follow-up: "${objectionData.followUps[currentStep]}"`);
+          }, 1000);
+        } else {
+          // End conversation
+          setConversationStep(0);
+          setConversationHistory([]);
+          setContextualHelp('');
+
+          // Perform advanced analysis
+          const transcriptAnalysis = analyzeTranscript(pitchText, actualTimer);
+          const improvementTips = generateImprovementTips(transcriptAnalysis, score, selectedObjection?.title);
+
+          // Save the pitch
+          const newPitch = {
+            id: Date.now(),
+            date: new Date().toISOString(),
+            pitch: pitchText,
+            duration: actualTimer,
+            objection: selectedObjection?.title || 'General Practice',
+            score: score,
+            aiFeedback: feedback,
+            audioURL: willHaveAudio ? audioURL : null,
+            transcriptAnalysis: transcriptAnalysis,
+            improvementTips: improvementTips,
+            weaknesses: identifyWeaknesses(transcriptAnalysis, score),
+            conversationHistory: conversationStep > 0 ? conversationHistory.concat([{
+              step: currentStep,
+              objection: currentStep === 0 ? selectedObjection.objection : objectionData.followUps[currentStep - 1],
+              response: pitchText,
+              feedback: feedback
+            }]) : []
+          };
+
+          setPitchHistory(prev => {
+            const updated = [newPitch, ...prev].slice(0, 20);
+            return updated;
+          });
+          setShowResults(true);
+          console.log('✅ Recording session complete');
+        }
       });
     }, 500);
   };
@@ -503,12 +860,20 @@ Provide specific coaching feedback based on what was actually said:`
 
         <div className="grid md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-              <Volume2 className="w-6 h-6 mr-2 text-indigo-600" />
-              Select an Objection
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center justify-between">
+              <div className="flex items-center">
+                <Volume2 className="w-6 h-6 mr-2 text-indigo-600" />
+                Select an Objection
+              </div>
+              <button
+                onClick={() => setShowCustomObjectionModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium"
+              >
+                + Custom
+              </button>
             </h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {dentistObjections.map(obj => (
+              {[...dentistObjections, ...customObjections].map(obj => (
                 <div
                   key={obj.id}
                   onClick={() => setSelectedObjection(obj)}
@@ -519,14 +884,34 @@ Provide specific coaching feedback based on what was actually said:`
                   }`}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-bold text-gray-800">{obj.title}</h3>
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      obj.difficulty === 'Easy' ? 'bg-green-100 text-green-800' :
-                      obj.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {obj.difficulty}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-gray-800">{obj.title}</h3>
+                      {obj.isCustom && (
+                        <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                          Custom
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {obj.isCustom && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteCustomObjection(obj.id);
+                          }}
+                          className="text-red-500 hover:text-red-700 text-sm"
+                        >
+                          ✕
+                        </button>
+                      )}
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        obj.difficulty === 'Easy' ? 'bg-green-100 text-green-800' :
+                        obj.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {obj.difficulty}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-sm text-gray-600 italic">"{obj.objection}"</p>
                 </div>
@@ -657,6 +1042,102 @@ Provide specific coaching feedback based on what was actually said:`
                     <p className="text-gray-700 leading-relaxed">{aiFeedback}</p>
                   )}
                 </div>
+
+                {/* Advanced Analysis Section */}
+                {(() => {
+                  const analysis = analyzeTranscript(currentPitch || 'Speech recognition not available. Audio recording captured.', timer || 1);
+                  const weaknesses = identifyWeaknesses(analysis, lastScore);
+                  const tips = generateImprovementTips(analysis, lastScore, selectedObjection?.title);
+
+                  return (
+                    <div className="mt-6 space-y-4">
+                      {/* Recording Playback */}
+                      {audioURL && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-green-900 mb-2 flex items-center">
+                            <Play className="w-4 h-4 mr-2" />
+                            Recording Playback
+                          </h4>
+                          <audio controls className="w-full">
+                            <source src={audioURL} type="audio/webm" />
+                            Your browser does not support audio playback.
+                          </audio>
+                        </div>
+                      )}
+
+                      {/* Transcript Analysis */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-blue-900 mb-3">📊 Transcript Analysis</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div className="bg-white p-2 rounded text-center">
+                            <div className="text-lg font-bold text-blue-600">{analysis.wordCount}</div>
+                            <div className="text-xs text-gray-600">Words</div>
+                          </div>
+                          <div className="bg-white p-2 rounded text-center">
+                            <div className="text-lg font-bold text-blue-600">{analysis.wpm}</div>
+                            <div className="text-xs text-gray-600">WPM</div>
+                          </div>
+                          <div className="bg-white p-2 rounded text-center">
+                            <div className="text-lg font-bold text-blue-600">{analysis.fillerWords}</div>
+                            <div className="text-xs text-gray-600">Filler Words</div>
+                          </div>
+                          <div className="bg-white p-2 rounded text-center">
+                            <div className="text-lg font-bold text-blue-600">{analysis.sentences}</div>
+                            <div className="text-xs text-gray-600">Sentences</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-xs text-blue-700">
+                          <strong>Pacing:</strong> {analysis.pacing === 'slow' ? '⚠️ Slow' : analysis.pacing === 'fast' ? '⚠️ Fast' : '✅ Good'}
+                        </div>
+                      </div>
+
+                      {/* Weaknesses Identified */}
+                      {weaknesses.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-red-900 mb-3 flex items-center">
+                            <Target className="w-4 h-4 mr-2" />
+                            Areas for Improvement
+                          </h4>
+                          <div className="space-y-2">
+                            {weaknesses.map((weakness, index) => (
+                              <div key={index} className="flex items-start gap-2 text-sm">
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  weakness.severity === 'high' ? 'bg-red-100 text-red-800' :
+                                  weakness.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {weakness.severity}
+                                </span>
+                                <div>
+                                  <div className="font-medium text-red-900">{weakness.description}</div>
+                                  <div className="text-red-700 text-xs">{weakness.suggestion}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Improvement Recommendations */}
+                      {tips.length > 0 && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-green-900 mb-3 flex items-center">
+                            <TrendingUp className="w-4 h-4 mr-2" />
+                            Personalized Coaching Tips
+                          </h4>
+                          <ul className="space-y-1 text-sm text-green-800">
+                            {tips.map((tip, index) => (
+                              <li key={index} className="flex items-start gap-2">
+                                <span className="text-green-600 mt-1">•</span>
+                                <span>{tip}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -734,6 +1215,60 @@ Provide specific coaching feedback based on what was actually said:`
                     </div>
                   </div>
 
+                  {/* Recording Playback in History */}
+                  {pitch.audioURL && (
+                    <div className="mb-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                      <audio controls className="w-full h-8">
+                        <source src={pitch.audioURL} type="audio/webm" />
+                      </audio>
+                    </div>
+                  )}
+
+                  {/* Transcript Analysis in History */}
+                  {pitch.transcriptAnalysis && (
+                    <div className="mb-3 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                      <div className="text-xs text-blue-900 mb-2 font-semibold">📊 Analysis</div>
+                      <div className="grid grid-cols-4 gap-2 text-xs">
+                        <div className="text-center">
+                          <div className="font-bold text-blue-600">{pitch.transcriptAnalysis.wordCount}</div>
+                          <div className="text-blue-700">words</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-bold text-blue-600">{pitch.transcriptAnalysis.wpm}</div>
+                          <div className="text-blue-700">WPM</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-bold text-blue-600">{pitch.transcriptAnalysis.fillerWords}</div>
+                          <div className="text-blue-700">fillers</div>
+                        </div>
+                        <div className="text-center">
+                          <div className={`font-bold ${
+                            pitch.transcriptAnalysis.pacing === 'slow' ? 'text-red-600' :
+                            pitch.transcriptAnalysis.pacing === 'fast' ? 'text-red-600' :
+                            'text-green-600'
+                          }`}>
+                            {pitch.transcriptAnalysis.pacing}
+                          </div>
+                          <div className="text-blue-700">pace</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Weaknesses in History */}
+                  {pitch.weaknesses && pitch.weaknesses.length > 0 && (
+                    <div className="mb-3 p-3 bg-red-50 rounded-lg border-l-4 border-red-400">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Target className="w-3 h-3 text-red-600" />
+                        <span className="text-xs font-semibold text-red-900">Key Issues:</span>
+                      </div>
+                      <div className="text-xs text-red-800">
+                        {pitch.weaknesses.slice(0, 2).map(w => w.description).join(' • ')}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Feedback */}
                   {pitch.aiFeedback && (
                     <div className="mb-3 p-3 bg-purple-50 rounded-lg border-l-4 border-purple-400">
                       <div className="flex items-center gap-2 mb-1">
@@ -741,6 +1276,17 @@ Provide specific coaching feedback based on what was actually said:`
                         <span className="text-xs font-semibold text-purple-900">AI Feedback:</span>
                       </div>
                       <p className="text-sm text-purple-800">{pitch.aiFeedback}</p>
+                    </div>
+                  )}
+
+                  {/* Improvement Tips */}
+                  {pitch.improvementTips && pitch.improvementTips.length > 0 && (
+                    <div className="mb-3 p-3 bg-green-50 rounded-lg border-l-4 border-green-400">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-3 h-3 text-green-600" />
+                        <span className="text-xs font-semibold text-green-900">Top Tip:</span>
+                      </div>
+                      <p className="text-xs text-green-800">{pitch.improvementTips[0]}</p>
                     </div>
                   )}
 
@@ -755,6 +1301,99 @@ Provide specific coaching feedback based on what was actually said:`
             </div>
           )}
         </div>
+
+        {/* Achievement Popup */}
+        {showAchievement && (
+          <div className="fixed top-4 right-4 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 animate-bounce">
+            <div className="flex items-center gap-3">
+              <Trophy className="w-8 h-8" />
+              <div>
+                <h3 className="font-bold text-lg">{showAchievement.title}</h3>
+                <p className="text-sm">{showAchievement.description}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contextual Help */}
+        {contextualHelp && (
+          <div className="fixed bottom-4 left-4 right-4 bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg z-40">
+            <div className="flex items-start gap-3">
+              <MessageSquare className="w-5 h-5 text-blue-600 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-blue-900 mb-1">💡 Contextual Help</h4>
+                <p className="text-blue-800 text-sm">{contextualHelp}</p>
+              </div>
+              <button
+                onClick={() => setContextualHelp('')}
+                className="text-blue-400 hover:text-blue-600"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Objection Modal */}
+        {showCustomObjectionModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-xl font-bold text-gray-800 mb-4">Create Custom Objection</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={newObjectionTitle}
+                    onChange={(e) => setNewObjectionTitle(e.target.value)}
+                    placeholder="e.g., Budget Concerns"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Objection Text</label>
+                  <textarea
+                    value={newObjectionText}
+                    onChange={(e) => setNewObjectionText(e.target.value)}
+                    placeholder="e.g., We can't afford this right now..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+                  <select
+                    value={newObjectionDifficulty}
+                    onChange={(e) => setNewObjectionDifficulty(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowCustomObjectionModal(false)}
+                  className="flex-1 px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addCustomObjection}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="text-center text-gray-600 text-sm mt-8 pb-8">
           <p>Practice daily to master your pitch • AI-powered coaching for dental SaaS success</p>
