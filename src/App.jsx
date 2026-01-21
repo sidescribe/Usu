@@ -161,6 +161,7 @@ const App = () => {
     setAiFeedback('');
 
     try {
+      console.log('🔑 API Key present:', !!GROQ_API_KEY);
       if (!GROQ_API_KEY) {
         throw new Error('Please add your Groq API key to the .env file as VITE_GROQ_API_KEY');
       }
@@ -168,6 +169,7 @@ const App = () => {
       console.log('🤖 Calling Groq AI API...');
       console.log('Pitch:', pitch.substring(0, 100));
       console.log('Objection:', objection);
+      console.log('API Key starts with:', GROQ_API_KEY.substring(0, 10) + '...');
 
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -226,8 +228,16 @@ Provide specific coaching feedback based on what was actually said:`
     } catch (error) {
       console.error('❌ AI Feedback Error:', error);
       console.log('Using fallback feedback instead');
+
+      let errorMessage = ' [AI unavailable]';
+      if (error.message.includes('API key')) {
+        errorMessage = ' [API key missing]';
+      } else if (error.message.includes('API Error')) {
+        errorMessage = ' [API connection failed]';
+      }
+
       const fallbackFeedback = generateFallbackFeedback(pitch, score);
-      setAiFeedback(fallbackFeedback + ' [AI unavailable - add Groq API key on line 26]');
+      setAiFeedback(fallbackFeedback + errorMessage);
       return fallbackFeedback;
     } finally {
       setIsLoadingFeedback(false);
@@ -359,12 +369,15 @@ Provide specific coaching feedback based on what was actually said:`
   };
 
   const stopRecording = () => {
+    console.log('🛑 Stopping recording...');
     setIsRecording(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
+      console.log('⏰ Timer cleared');
     }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+      console.log('🎤 Speech recognition stopped');
     }
 
     const willHaveAudio = isRecordingAudio;
@@ -372,10 +385,13 @@ Provide specific coaching feedback based on what was actually said:`
     if (mediaRecorderRef.current && isRecordingAudio) {
       mediaRecorderRef.current.stop();
       setIsRecordingAudio(false);
+      console.log('🎵 Audio recording stopped');
     }
 
     const pitchText = currentPitch.trim() || 'Speech recognition not available. Audio recording captured.';
     const actualTimer = timer || 1;
+    console.log('📝 Final pitch:', pitchText.substring(0, 100));
+    console.log('⏱️ Duration:', actualTimer);
 
     const score = calculateScore(pitchText, actualTimer);
     setLastScore(score);
@@ -398,6 +414,7 @@ Provide specific coaching feedback based on what was actually said:`
           return updated;
         });
         setShowResults(true);
+        console.log('✅ Recording session complete');
       });
     }, 500);
   };
@@ -547,7 +564,14 @@ Provide specific coaching feedback based on what was actually said:`
 
               <div className="space-y-3">
                 <button
-                  onClick={isRecording ? stopRecording : startRecording}
+                  onClick={() => {
+                    console.log('🎯 Button clicked, isRecording:', isRecording);
+                    if (isRecording) {
+                      stopRecording();
+                    } else {
+                      startRecording();
+                    }
+                  }}
                   disabled={!selectedObjection && !isRecording}
                   className={`w-full py-4 rounded-lg font-bold text-white text-lg flex items-center justify-center gap-2 transition-all ${
                     isRecording
