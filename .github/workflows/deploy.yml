@@ -32,20 +32,44 @@ jobs:
 
       - name: Create .env file
         run: |
-          echo "Checking available secrets..."
-          echo "Available secrets check:"
+          echo "🔍 Checking for API key secret..."
+          echo "Testing different secret names:"
+
+          # Try the main secret name
           if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
-            echo "✅ GROQ_API_KEY secret found and not empty"
-            echo "VITE_GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
-            echo "API key length: $(echo ${{ secrets.GROQ_API_KEY }} | wc -c) characters"
+            echo "✅ Found GROQ_API_KEY secret!"
+            API_KEY="${{ secrets.GROQ_API_KEY }}"
+            SECRET_NAME="GROQ_API_KEY"
+          elif [ -n "${{ secrets.GROQ }}" ]; then
+            echo "✅ Found GROQ secret (using as fallback)"
+            API_KEY="${{ secrets.GROQ }}"
+            SECRET_NAME="GROQ"
+          elif [ -n "${{ secrets.API_KEY }}" ]; then
+            echo "✅ Found API_KEY secret (using as fallback)"
+            API_KEY="${{ secrets.API_KEY }}"
+            SECRET_NAME="API_KEY"
           else
-            echo "❌ GROQ_API_KEY secret is empty or not found"
-            echo "Available secrets in this repo:"
-            echo "- Check: https://github.com/sidescribe/Usu/settings/secrets/actions"
-            echo "- Secret name must be: GROQ_API_KEY"
+            echo "❌ No API key secret found!"
+            echo ""
+            echo "🔧 TROUBLESHOOTING STEPS:"
+            echo "1. Go to: https://github.com/sidescribe/Usu/settings/secrets/actions"
+            echo "2. Click 'New repository secret'"
+            echo "3. Name: GROQ_API_KEY (case sensitive)"
+            echo "4. Value: Your Groq API key (starts with gsk_)"
+            echo "5. Make sure you're the repository OWNER or have admin access"
+            echo ""
+            echo "💡 Common issues:"
+            echo "- Secret name has wrong case (GROQ_API_KEY vs groq_api_key)"
+            echo "- You're not the repository owner"
+            echo "- Secret value is empty"
             exit 1
           fi
-          echo ".env contents verification:"
+
+          echo "Using secret: $SECRET_NAME"
+          echo "API key length: $(echo "$API_KEY" | wc -c) characters"
+          echo "VITE_GROQ_API_KEY=$API_KEY" > .env
+          echo ".env file created successfully"
+          echo "Contents:"
           cat .env
 
       - name: Build
