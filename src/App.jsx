@@ -712,6 +712,31 @@ Provide specific coaching feedback based on what was actually said:`
 
     setTimeout(() => {
       getAIFeedback(pitchText, selectedObjection?.objection || 'General practice', score).then(feedback => {
+        // Perform advanced analysis (needed for both continuing and ending conversations)
+        const transcriptAnalysis = analyzeTranscript(pitchText, actualTimer);
+        const improvementTips = generateImprovementTips(transcriptAnalysis, score, selectedObjection?.title);
+
+        // Save the pitch immediately after each response
+        const newPitch = {
+          id: Date.now(),
+          date: new Date().toISOString(),
+          pitch: pitchText,
+          duration: actualTimer,
+          objection: selectedObjection?.title || 'General Practice',
+          score: score,
+          aiFeedback: feedback,
+          audioURL: willHaveAudio ? audioURL : null,
+          transcriptAnalysis: transcriptAnalysis,
+          improvementTips: improvementTips,
+          weaknesses: identifyWeaknesses(transcriptAnalysis, score),
+          conversationHistory: conversationStep > 0 ? conversationHistory.concat([{
+            step: currentStep,
+            objection: currentStep === 0 ? selectedObjection.objection : objectionData.followUps[currentStep - 1],
+            response: pitchText,
+            feedback: feedback
+          }]) : []
+        };
+
         // Handle multi-turn conversation
         const currentStep = conversationStep;
         const objectionData = dentistObjections.find(obj => obj.id === selectedObjection?.id);
@@ -739,39 +764,15 @@ Provide specific coaching feedback based on what was actually said:`
           setConversationStep(0);
           setConversationHistory([]);
           setContextualHelp('');
-
-          // Perform advanced analysis
-          const transcriptAnalysis = analyzeTranscript(pitchText, actualTimer);
-          const improvementTips = generateImprovementTips(transcriptAnalysis, score, selectedObjection?.title);
-
-          // Save the pitch
-          const newPitch = {
-            id: Date.now(),
-            date: new Date().toISOString(),
-            pitch: pitchText,
-            duration: actualTimer,
-            objection: selectedObjection?.title || 'General Practice',
-            score: score,
-            aiFeedback: feedback,
-            audioURL: willHaveAudio ? audioURL : null,
-            transcriptAnalysis: transcriptAnalysis,
-            improvementTips: improvementTips,
-            weaknesses: identifyWeaknesses(transcriptAnalysis, score),
-            conversationHistory: conversationStep > 0 ? conversationHistory.concat([{
-              step: currentStep,
-              objection: currentStep === 0 ? selectedObjection.objection : objectionData.followUps[currentStep - 1],
-              response: pitchText,
-              feedback: feedback
-            }]) : []
-          };
-
-          setPitchHistory(prev => {
-            const updated = [newPitch, ...prev].slice(0, 20);
-            return updated;
-          });
-          setShowResults(true);
-          console.log('✅ Recording session complete');
         }
+
+        // Save to history immediately (moved outside the if/else)
+        setPitchHistory(prev => {
+          const updated = [newPitch, ...prev].slice(0, 20);
+          return updated;
+        });
+        setShowResults(true);
+        console.log('✅ Recording session complete');
       });
     }, 500);
   };
