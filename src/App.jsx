@@ -13,6 +13,7 @@ const App = () => {
   const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [audioURL, setAudioURL] = useState(null);
+  const [audioBlob, setAudioBlob] = useState(null);
   const [playingAudioId, setPlayingAudioId] = useState(null);
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -175,26 +176,84 @@ const App = () => {
     }
   ];
 
+  // Helper function to convert blob to base64
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  // Helper function to convert base64 to blob
+  const base64ToBlob = (base64, mimeType) => {
+    try {
+      const byteCharacters = atob(base64.split(',')[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      return new Blob([byteArray], { type: mimeType });
+    } catch (e) {
+      console.error('Error converting base64 to blob:', e);
+      return null;
+    }
+  };
+
+  // Load pitch history from localStorage (convert base64 back to blobs)
   useEffect(() => {
     const saved = localStorage.getItem('pitchHistory');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setPitchHistory(parsed);
+        // Convert base64 audio back to blobs
+        const historyWithBlobs = parsed.map(p => {
+          if (p.audioBase64) {
+            const blob = base64ToBlob(p.audioBase64, 'audio/webm');
+            return {
+              ...p,
+              audioBlob: blob,
+              audioURL: blob ? URL.createObjectURL(blob) : null
+            };
+          }
+          return p;
+        });
+        setPitchHistory(historyWithBlobs);
       } catch (e) {
         console.error('Error loading history:', e);
       }
     }
   }, []);
 
+  // Save pitch history to localStorage (convert blobs to base64)
   useEffect(() => {
-    if (pitchHistory.length > 0) {
-      const historyToSave = pitchHistory.map(p => ({
-        ...p,
-        audioURL: null
-      }));
-      localStorage.setItem('pitchHistory', JSON.stringify(historyToSave));
-    }
+    const saveHistory = async () => {
+      if (pitchHistory.length > 0) {
+        const historyToSave = await Promise.all(
+          pitchHistory.map(async (p) => {
+            let audioBase64 = p.audioBase64 || null;
+            // Only convert if we have a new blob without base64
+            if (p.audioBlob && !p.audioBase64) {
+              try {
+                audioBase64 = await blobToBase64(p.audioBlob);
+              } catch (e) {
+                console.error('Error converting audio to base64:', e);
+              }
+            }
+            return {
+              ...p,
+              audioBase64: audioBase64,
+              audioBlob: undefined,
+              audioURL: undefined
+            };
+          })
+        );
+        localStorage.setItem('pitchHistory', JSON.stringify(historyToSave));
+      }
+    };
+    saveHistory();
   }, [pitchHistory]);
 
   useEffect(() => {
@@ -623,6 +682,7 @@ Provide specific coaching feedback based on what was actually said:`
     setShowResults(false);
     setAiFeedback('');
     setAudioURL(null);
+    setAudioBlob(null);
     audioChunksRef.current = [];
 
     try {
@@ -637,8 +697,9 @@ Provide specific coaching feedback based on what was actually said:`
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(audioBlob);
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setAudioBlob(blob);
         setAudioURL(url);
 
         stream.getTracks().forEach(track => track.stop());
@@ -725,7 +786,8 @@ Provide specific coaching feedback based on what was actually said:`
           objection: selectedObjection?.title || 'General Practice',
           score: score,
           aiFeedback: feedback,
-          audioURL: willHaveAudio ? audioURL : null,
+            audioURL: willHaveAudio ? audioURL : null,
+            audioBlob: willHaveAudio ? audioBlob : null,
           transcriptAnalysis: transcriptAnalysis,
           improvementTips: improvementTips,
           weaknesses: identifyWeaknesses(transcriptAnalysis, score),
