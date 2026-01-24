@@ -48,8 +48,10 @@ const App = () => {
   const [newObjectionText, setNewObjectionText] = useState('');
   const [newObjectionDifficulty, setNewObjectionDifficulty] = useState('Medium');
 
-  // ⭐⭐⭐ GROQ API KEY loaded from .env file ⭐⭐⭐
-  // Get free key at: https://console.groq.com
+  // ⭐⭐⭐ AI API KEYS loaded from .env file ⭐⭐⭐
+  // Get a free OpenAI key at: https://platform.openai.com/account/api-keys
+  const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+  // Legacy Groq fallback (if needed)
   const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
   const dentistObjections = [
@@ -272,24 +274,33 @@ const App = () => {
     setAiFeedback('');
 
     try {
-      console.log('🔑 API Key present:', !!GROQ_API_KEY);
-      if (!GROQ_API_KEY) {
-        throw new Error('Please add your Groq API key to the .env file as VITE_GROQ_API_KEY');
+      const activeKey = OPENAI_API_KEY || GROQ_API_KEY;
+      const usingOpenAI = !!OPENAI_API_KEY;
+
+      console.log('🔑 API Key present:', !!activeKey);
+      if (!activeKey) {
+        throw new Error('Please add your Groq or OpenAI API key to the .env file (VITE_OPENAI_API_KEY or VITE_GROQ_API_KEY)');
       }
 
-      console.log('🤖 Calling Groq AI API...');
+      const providerName = usingOpenAI ? 'OpenAI' : 'Groq';
+      const endpoint = usingOpenAI
+        ? 'https://api.openai.com/v1/chat/completions'
+        : 'https://api.groq.com/openai/v1/chat/completions';
+      const model = usingOpenAI ? 'gpt-4o-mini' : 'llama-3.1-8b-instant';
+
+      console.log(`🤖 Calling ${providerName} API...`);
       console.log('Pitch:', pitch.substring(0, 100));
       console.log('Objection:', objection);
-      console.log('API Key starts with:', GROQ_API_KEY.substring(0, 10) + '...');
+      console.log('API Key starts with:', activeKey.substring(0, 10) + '...');
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Authorization': `Bearer ${activeKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model,
           messages: [
             {
               role: 'system',
