@@ -788,6 +788,9 @@ Provide specific coaching feedback based on what was actually said:`
         const transcriptAnalysis = analyzeTranscript(pitchText, actualTimer);
         const improvementTips = generateImprovementTips(transcriptAnalysis, score, selectedObjection?.title);
 
+        const currentStep = conversationStep;
+        const objectionData = dentistObjections.find(obj => obj.id === selectedObjection?.id);
+
         // Save the pitch immediately after each response
         const newPitch = {
           id: Date.now(),
@@ -811,9 +814,6 @@ Provide specific coaching feedback based on what was actually said:`
         };
 
         // Handle multi-turn conversation
-        const currentStep = conversationStep;
-        const objectionData = dentistObjections.find(obj => obj.id === selectedObjection?.id);
-
         if (currentStep < (objectionData?.followUps?.length || 0)) {
           // Continue conversation with follow-up
           setConversationStep(currentStep + 1);
