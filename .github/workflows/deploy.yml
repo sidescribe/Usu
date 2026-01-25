@@ -33,6 +33,7 @@ jobs:
       - name: Create .env file
         run: |
           echo "VITE_OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
+          echo "Note: this build uses the OpenAI ChatGPT API key" >> .env
           echo ".env file created for production build"
 
       - name: Build
